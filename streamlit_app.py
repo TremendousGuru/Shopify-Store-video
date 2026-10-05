@@ -13,6 +13,9 @@ from urllib.parse import quote
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 
+import httpx
+
+from app import compose as composer
 from app import db, ingest, pipeline
 
 
@@ -79,6 +82,10 @@ async def run_batch(ids: list[int], settings: dict) -> dict:
 
 def run_ids(ids: list[int], settings: dict) -> dict:
     return asyncio.run(run_batch(ids, settings))
+
+
+def run_api_key_test(settings: dict) -> dict:
+    return asyncio.run(composer.test_api_key(settings))
 
 
 def export_csv(leads: list[dict]) -> str:
@@ -154,6 +161,29 @@ def save_settings_form(settings: dict) -> None:
             st.session_state["session_api_key"] = api_key.strip()
         st.success("Settings saved.")
         st.rerun()
+
+    secret_api_key = config_value("OPENAI_API_KEY").strip()
+    active_api_key = (settings.get("api_key") or "").strip()
+    if secret_api_key:
+        st.sidebar.success("OPENAI_API_KEY detected in Streamlit Secrets.")
+    elif st.session_state.get("session_api_key"):
+        st.sidebar.info("A temporary API key is active for this session.")
+    elif active_api_key:
+        st.sidebar.info("An API key is available from saved settings.")
+    else:
+        st.sidebar.warning("No API key detected. The app will use built-in templates.")
+
+    if st.sidebar.button("Test API key", disabled=not active_api_key, key="test_api_key"):
+        with st.sidebar.spinner("Testing the configured API key..."):
+            try:
+                result = run_api_key_test(settings)
+            except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+                st.sidebar.error(f"API key test failed: {exc}")
+            else:
+                st.sidebar.success(f"API key works ({result['engine']}).")
+                subjects = result.get("subjects") or []
+                if subjects:
+                    st.sidebar.caption(f"Sample subject: {subjects[0]}")
 
 
 def main() -> None:

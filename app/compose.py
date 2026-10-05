@@ -181,6 +181,16 @@ async def compose_ai(facts: dict, settings: dict, store_hint: str = "the store")
     }
 
 
+async def test_api_key(settings: dict) -> dict:
+    facts = {
+        "store_name": "Test Goods Co", "domain": "testgoods.com", "platform": "shopify",
+        "tagline": "Small-batch candles poured in Portland",
+        "products": [{"title": "Cedar & Smoke Candle", "price": "28.0", "type": "Candles"}],
+        "signals": ["small-batch"], "signal_phrases": ["small-batch production"],
+    }
+    return await compose_ai(facts, settings, store_hint="Test Goods Co")
+
+
 # ----------------------------------------------------------------- templates
 
 def display_product(title: str, limit: int = 34) -> str:

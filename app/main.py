@@ -101,14 +101,8 @@ async def test_key():
     s = db.load_settings()
     if not (s.get("api_key") or "").strip():
         raise HTTPException(400, "No API key saved yet.")
-    facts = {
-        "store_name": "Test Goods Co", "domain": "testgoods.com", "platform": "shopify",
-        "tagline": "Small-batch candles poured in Portland",
-        "products": [{"title": "Cedar & Smoke Candle", "price": "28.0", "type": "Candles"}],
-        "signals": ["small-batch"], "signal_phrases": ["small-batch production"],
-    }
     try:
-        out = await composer.compose_ai(facts, s, store_hint="Test Goods Co")
+        out = await composer.test_api_key(s)
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": str(e)[:300]}, status_code=200)
     return {"ok": True, "engine": out.get("engine"), "sample_subject": (out.get("subjects") or [""])[0],

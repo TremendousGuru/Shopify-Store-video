@@ -49,7 +49,9 @@ OPENAI_API_KEY = "optional-openai-compatible-api-key"
 `APP_USERNAME` and an `APP_PASSWORD` of at least 16 characters are required; without them,
 the Streamlit app stays locked. `OPENAI_API_KEY` is optional: without it, the app writes
 messages with its built-in templates. An API key entered in the settings panel is kept only
-for that browser session; use Streamlit Secrets for a persistent deployment key.
+for that browser session; use Streamlit Secrets for a persistent deployment key. After setting
+`OPENAI_API_KEY`, the Settings sidebar reports when it detects the secret; select **Test API key**
+to verify that the configured endpoint can generate a response before processing stores.
 
 **Data and privacy:** Community Cloud's local filesystem is not durable storage. The app
 uses a local SQLite database, so lead records and settings can be lost when the app restarts
