@@ -182,13 +182,46 @@ async def compose_ai(facts: dict, settings: dict, store_hint: str = "the store")
 
 
 async def test_api_key(settings: dict) -> dict:
-    facts = {
-        "store_name": "Test Goods Co", "domain": "testgoods.com", "platform": "shopify",
-        "tagline": "Small-batch candles poured in Portland",
-        "products": [{"title": "Cedar & Smoke Candle", "price": "28.0", "type": "Candles"}],
-        "signals": ["small-batch"], "signal_phrases": ["small-batch production"],
+    """Verify API access without requiring the model to follow the email JSON format."""
+    base = (settings.get("base_url") or "https://api.openai.com/v1").rstrip("/")
+    key = (settings.get("api_key") or "").strip()
+    model = settings.get("model") or "gpt-4o-mini"
+    if not key:
+        raise RuntimeError("No API key is configured.")
+
+    payload = {
+        "model": model,
+        "max_tokens": 64,
+        "messages": [
+            {"role": "user", "content": "Reply with exactly: API key verified."},
+        ],
     }
-    return await compose_ai(facts, settings, store_hint="Test Goods Co")
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(f"{base}/chat/completions", json=payload, headers=headers)
+    if response.status_code >= 400:
+        try:
+            error = response.json().get("error", {}).get("message", "")
+        except (ValueError, AttributeError):
+            error = response.text[:200]
+        if key in error:
+            error = error.replace(key, "[redacted]")
+        raise RuntimeError(f"API {response.status_code}: {error or 'request failed'}")
+
+    data = response.json()
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError("API request succeeded, but the response had an unexpected format.")
+
+    if isinstance(content, list):
+        content = " ".join(
+            block.get("text", "") for block in content if isinstance(block, dict)
+        )
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("API request succeeded, but the model returned an empty response.")
+
+    return {"engine": f"ai:{model}", "sample": content.strip()[:200]}
 
 
 # ----------------------------------------------------------------- templates

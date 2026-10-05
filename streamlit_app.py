@@ -181,9 +181,8 @@ def save_settings_form(settings: dict) -> None:
                 st.sidebar.error(f"API key test failed: {exc}")
             else:
                 st.sidebar.success(f"API key works ({result['engine']}).")
-                subjects = result.get("subjects") or []
-                if subjects:
-                    st.sidebar.caption(f"Sample subject: {subjects[0]}")
+                if result.get("sample"):
+                    st.sidebar.caption(f"Sample response: {result['sample']}")
 
 
 def main() -> None:

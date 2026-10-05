@@ -51,7 +51,8 @@ the Streamlit app stays locked. `OPENAI_API_KEY` is optional: without it, the ap
 messages with its built-in templates. An API key entered in the settings panel is kept only
 for that browser session; use Streamlit Secrets for a persistent deployment key. After setting
 `OPENAI_API_KEY`, the Settings sidebar reports when it detects the secret; select **Test API key**
-to verify that the configured endpoint can generate a response before processing stores.
+to verify that the configured endpoint and model can return a short plain-text response before
+processing stores. This test does not require the model to generate an outreach email or JSON.
 
 **Data and privacy:** Community Cloud's local filesystem is not durable storage. The app
 uses a local SQLite database, so lead records and settings can be lost when the app restarts
