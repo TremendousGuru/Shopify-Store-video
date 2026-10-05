@@ -75,8 +75,70 @@ def table_rows() -> list[dict]:
 
 async def run_batch(ids: list[int], settings: dict) -> dict:
     run = pipeline.start_run(ids, settings)
-    if run.task is not None:
-        await run.task
+    if run.task is None:
+        raise RuntimeError("The crawl-and-compose job did not start.")
+
+    total = len(ids)
+    progress = st.progress(0.0, text=f"Starting work for {total} stores...")
+    summary = st.empty()
+    details = st.empty()
+    id_set = set(ids)
+
+    def refresh_progress() -> None:
+        snapshot = run.snapshot()
+        processed = snapshot["processed"]
+        ratio = processed / total if total else 1.0
+        progress.progress(
+            ratio,
+            text=f"Processed {processed} of {total} stores",
+        )
+
+        current_leads = [lead for lead in db.list_leads() if lead["id"] in id_set]
+        status_counts: dict[str, int] = {}
+        for lead in current_leads:
+            status = lead.get("status", "unknown")
+            status_counts[status] = status_counts.get(status, 0) + 1
+        summary.caption(
+            f"Ready: {status_counts.get('ready', 0)} · "
+            f"Crawling: {status_counts.get('crawling', 0)} · "
+            f"Composing: {status_counts.get('composing', 0)} · "
+            f"Failed: {status_counts.get('failed', 0)}"
+        )
+
+        visible = [
+            lead for lead in current_leads
+            if lead.get("status") in {"pending", "crawling", "crawled", "composing", "ready", "failed"}
+        ]
+        priority = {
+            "failed": 0,
+            "crawling": 1,
+            "composing": 1,
+            "pending": 2,
+            "crawled": 2,
+            "ready": 3,
+        }
+        visible.sort(key=lambda lead: (priority.get(lead.get("status", ""), 4), lead["id"]))
+        visible = visible[:30]
+        if visible:
+            details.dataframe(
+                [{
+                    "Store": lead.get("store_name") or lead.get("domain") or f"Lead {lead['id']}",
+                    "Status": lead.get("status", ""),
+                    "Stage": lead.get("stage", ""),
+                    "Details": lead.get("error") or lead.get("engine", ""),
+                } for lead in visible],
+                hide_index=True,
+                use_container_width=True,
+            )
+        else:
+            details.empty()
+
+    refresh_progress()
+    while not run.task.done():
+        await asyncio.wait({run.task}, timeout=0.75)
+        refresh_progress()
+    await run.task
+    refresh_progress()
     return run.snapshot()
 
 

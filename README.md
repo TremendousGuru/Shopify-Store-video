@@ -98,7 +98,10 @@ If a row has no email, the crawler looks for one on the site (homepage, contact 
 and fills it in. Missing store names are replaced with the store's real name from its own site.
 
 ### 2. Crawl & compose
-Press **Crawl & compose**. Per store it reads:
+Press **Crawl & compose**. The app shows batch progress and each store's current stage (queued,
+crawling, composing, ready or failed), plus error details for failed stores, so you can see whether
+work is moving while a long list is processing. Completed crawl facts and drafts are saved as each
+store finishes. Per store it reads:
 
 - **Homepage** — tagline, categories, what they sell
 - **`/pages/about`** — story, founder name, founding year, brand values (this is where the best hooks live)
@@ -108,8 +111,8 @@ Press **Crawl & compose**. Per store it reads:
 It then writes one message per store from those facts: a subject line plus three options, an opener
 that references something specific and checkable, who you are, the video offer, and a CTA.
 
-Progress streams live. You can close the tab; the work continues in the background and rows update
-when you come back.
+Processing is concurrent up to the **Stores at once** setting. Keep the app page open until the
+batch finishes; the progress display updates as each store moves through crawling and composing.
 
 ### 3. Review and send
 Review any row to edit its draft and inspect the collected store facts and sources.
