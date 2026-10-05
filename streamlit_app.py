@@ -146,6 +146,17 @@ def run_ids(ids: list[int], settings: dict) -> dict:
     return asyncio.run(run_batch(ids, settings))
 
 
+def next_ready_lead_id(leads: list[dict], current_id: int) -> int | None:
+    ready_ids = sorted(
+        lead["id"] for lead in leads
+        if lead.get("status") == "ready" and lead["id"] != current_id
+    )
+    return next(
+        (lead_id for lead_id in ready_ids if lead_id > current_id),
+        ready_ids[0] if ready_ids else None,
+    )
+
+
 def run_api_key_test(settings: dict) -> dict:
     return asyncio.run(composer.test_api_key(settings))
 
@@ -318,11 +329,22 @@ def main() -> None:
         if not leads:
             st.info("Add a list of stores to get started.")
         else:
-            if st.session_state.get("open_mailto_after_mark_id") is not None:
-                st.session_state["lead_view"] = "Sent"
+            advance_action = st.session_state.pop("advance_to_ready", None)
+            if advance_action is not None:
+                st.session_state["lead_view"] = "Ready"
+                if advance_action["next_id"] is None:
+                    st.session_state.pop("review_lead_id", None)
+                else:
+                    st.session_state["review_lead_id"] = advance_action["next_id"]
+
             lead_view = st.selectbox(
                 "Show leads", ["All", "Pending", "Ready", "Sent", "Failed"], key="lead_view"
             )
+            if advance_action is not None:
+                if advance_action["next_id"] is None:
+                    st.success("Marked sent. There are no more Ready drafts.")
+                else:
+                    st.success("Marked sent. The next Ready draft is loaded below.")
             view_statuses = {
                 "Pending": {"pending", "crawled", "crawling", "composing"},
                 "Ready": {"ready"},
@@ -394,9 +416,6 @@ def main() -> None:
             st.divider()
             if visible_leads:
                 lead_by_id = {lead["id"]: lead for lead in visible_leads}
-                pending_mailto_id = st.session_state.get("open_mailto_after_mark_id")
-                if pending_mailto_id in lead_by_id:
-                    st.session_state["review_lead_id"] = pending_mailto_id
                 chosen_id = st.selectbox(
                     "Review a lead",
                     options=[lead["id"] for lead in visible_leads],
@@ -408,6 +427,8 @@ def main() -> None:
                     key="review_lead_id",
                 )
                 show_lead(lead_by_id[chosen_id], settings)
+            elif lead_view == "Ready":
+                st.info("No Ready drafts. Crawl and compose leads to create drafts.")
 
     with exports_tab:
         st.subheader("Export drafts")
@@ -444,6 +465,20 @@ def show_lead(lead: dict, settings: dict) -> None:
     body = st.text_area("Message draft", value=full.get("body", ""), height=240, key=f"body_{lead['id']}")
 
     already_sent = lead.get("status") == "sent"
+    can_send = bool(
+        lead.get("status") == "ready"
+        and lead.get("email")
+        and subject.strip()
+        and body.strip()
+    )
+    if not already_sent and can_send:
+        mailto = f"mailto:{quote(lead['email'], safe='')}?subject={quote(subject)}&body={quote(body)}"
+        st.link_button("1. Open draft in Gmail", mailto)
+        st.caption(
+            "Send the message in Gmail, return here, then use **Sent & Next** to record it and load "
+            "the next Ready draft. The website cannot verify whether Gmail actually sent it."
+        )
+
     buttons = st.columns(4)
     with buttons[0]:
         if st.button("Save draft", key=f"save_{lead['id']}"):
@@ -465,30 +500,26 @@ def show_lead(lead: dict, settings: dict) -> None:
             st.success(f"Crawl finished: {result['ready']} ready, {result['failed']} failed.")
             st.rerun()
     with buttons[3]:
-        can_send = bool(lead.get("email") and subject.strip() and body.strip())
         if not already_sent and st.button(
-            "Send & move to Sent",
+            "2. Sent & Next",
             key=f"sent_{lead['id']}",
             disabled=not can_send,
         ):
+            next_id = next_ready_lead_id(db.list_leads(), lead["id"])
             db.update_lead(lead["id"], subject=subject, body=body, status="sent",
                            sent_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
-            st.session_state["open_mailto_after_mark_id"] = lead["id"]
+            st.session_state["advance_to_ready"] = {"next_id": next_id}
             st.rerun()
 
     if already_sent:
         sent_at = lead.get("sent_at")
         st.info(
             f"Marked sent{f' on {sent_at}' if sent_at else ''}. "
-            "This status records your click in the website; it cannot confirm Gmail actually sent the message."
+            "This records your confirmation; the website cannot verify delivery through Gmail."
         )
-        if st.session_state.pop("open_mailto_after_mark_id", None) == lead["id"]:
-            mailto = f"mailto:{quote(lead['email'], safe='')}?subject={quote(subject)}&body={quote(body)}"
-            st.link_button("Open Gmail draft to finish sending", mailto)
-    elif lead.get("email") and subject:
+    elif not can_send:
         st.caption(
-            "The Send button will move this lead to Sent immediately. The app cannot verify "
-            "whether Gmail completed delivery. Set Gmail as your phone's default mail app."
+            "Add a recipient email, subject, and message body to enable the Gmail draft and Sent & Next actions."
         )
 
     facts = full.get("facts") or {}

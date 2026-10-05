@@ -117,12 +117,12 @@ batch finishes; the progress display updates as each store moves through crawlin
 ### 3. Review and send
 Review any row to edit its draft and inspect the collected store facts and sources.
 
-On a phone, **Send & move to Sent** immediately marks the lead as sent in the website, then shows a
-`mailto:` link to open the default mail app with the recipient, subject and body filled in. Open
-that draft and press Send in Gmail; set Gmail as the phone's default mail app if needed. The website
-cannot confirm whether Gmail actually sent the message, so the Sent status means you clicked the
-website's Send action, not confirmed delivery. Sent leads can be filtered separately and the send
-link is hidden after the click to reduce accidental duplicates.
+On a phone, first select **Open draft in Gmail** to open the default mail app with the recipient,
+subject and body filled in; set Gmail as the phone's default mail app if needed. Send the message
+in Gmail, return to the website, and select **Sent & Next**. This records the lead as sent and loads
+the next Ready draft in the same review area. The website cannot verify delivery through `mailto:`,
+so only select **Sent & Next** after sending. Sent leads can be filtered separately and cannot be
+sent again from the review screen.
 
 ---
 
