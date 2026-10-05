@@ -114,11 +114,12 @@ when you come back.
 ### 3. Review and send
 Review any row to edit its draft and inspect the collected store facts and sources.
 
-On a phone, **Open draft in Gmail** uses a `mailto:` link to open the default mail app with the
-recipient, subject and body filled in. Set Gmail as the phone's default mail app if you want it
-to open in Gmail. The app cannot detect whether you actually pressed Send: return to the website
-and select **Confirm sent** only after sending. A lead marked `sent` no longer shows the send link,
-which helps reduce accidental duplicates.
+On a phone, **Send & move to Sent** immediately marks the lead as sent in the website, then shows a
+`mailto:` link to open the default mail app with the recipient, subject and body filled in. Open
+that draft and press Send in Gmail; set Gmail as the phone's default mail app if needed. The website
+cannot confirm whether Gmail actually sent the message, so the Sent status means you clicked the
+website's Send action, not confirmed delivery. Sent leads can be filtered separately and the send
+link is hidden after the click to reduce accidental duplicates.
 
 ---
 

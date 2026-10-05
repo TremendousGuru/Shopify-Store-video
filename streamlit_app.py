@@ -256,6 +256,22 @@ def main() -> None:
         if not leads:
             st.info("Add a list of stores to get started.")
         else:
+            if st.session_state.get("open_mailto_after_mark_id") is not None:
+                st.session_state["lead_view"] = "Sent"
+            lead_view = st.selectbox(
+                "Show leads", ["All", "Pending", "Ready", "Sent", "Failed"], key="lead_view"
+            )
+            view_statuses = {
+                "Pending": {"pending", "crawled", "crawling", "composing"},
+                "Ready": {"ready"},
+                "Sent": {"sent"},
+                "Failed": {"failed"},
+            }
+            visible_leads = [
+                lead for lead in leads
+                if lead_view == "All" or lead.get("status") in view_statuses[lead_view]
+            ]
+
             scope = st.selectbox("Crawl", ["Queued and failed", "Failed only", "All stores"])
             status_filter = {
                 "Queued and failed": ["pending", "failed"],
@@ -273,13 +289,21 @@ def main() -> None:
                 "Store": lead.get("store_name") or "—", "Domain": lead.get("domain", ""),
                 "Email": lead.get("email", ""), "Status": lead.get("status", ""),
                 "Details": lead.get("error") or lead.get("notes") or lead.get("engine", ""),
-            } for lead in leads]
-            selection = st.dataframe(
-                frame, hide_index=True, use_container_width=True,
-                on_select="rerun", selection_mode="multi-row", key="lead_table",
-            )
-            selected_rows = selection.selection.rows
-            selected_ids = [leads[index]["id"] for index in selected_rows if index < len(leads)]
+            } for lead in visible_leads]
+            if not visible_leads:
+                st.info(f"No {lead_view.lower()} leads.")
+                selected_ids = []
+            else:
+                selection = st.dataframe(
+                    frame, hide_index=True, use_container_width=True,
+                    on_select="rerun", selection_mode="multi-row", key="lead_table",
+                )
+                selected_rows = selection.selection.rows
+                selected_ids = [
+                    visible_leads[index]["id"]
+                    for index in selected_rows
+                    if index < len(visible_leads)
+                ]
             action_cols = st.columns(3)
             with action_cols[0]:
                 if st.button("Crawl selected", disabled=not selected_ids):
@@ -306,15 +330,22 @@ def main() -> None:
                         st.rerun()
 
             st.divider()
-            lead_by_id = {lead["id"]: lead for lead in leads}
-            chosen_id = st.selectbox(
-                "Review a lead",
-                options=[lead["id"] for lead in leads],
-                format_func=lambda lead_id: (
-                    lead_by_id[lead_id].get("store_name") or lead_by_id[lead_id].get("domain") or str(lead_id)
-                ),
-            )
-            show_lead(lead_by_id[chosen_id], settings)
+            if visible_leads:
+                lead_by_id = {lead["id"]: lead for lead in visible_leads}
+                pending_mailto_id = st.session_state.get("open_mailto_after_mark_id")
+                if pending_mailto_id in lead_by_id:
+                    st.session_state["review_lead_id"] = pending_mailto_id
+                chosen_id = st.selectbox(
+                    "Review a lead",
+                    options=[lead["id"] for lead in visible_leads],
+                    format_func=lambda lead_id: (
+                        lead_by_id[lead_id].get("store_name")
+                        or lead_by_id[lead_id].get("domain")
+                        or str(lead_id)
+                    ),
+                    key="review_lead_id",
+                )
+                show_lead(lead_by_id[chosen_id], settings)
 
     with exports_tab:
         st.subheader("Export drafts")
@@ -370,23 +401,31 @@ def show_lead(lead: dict, settings: dict) -> None:
             st.success(f"Crawl finished: {result['ready']} ready, {result['failed']} failed.")
             st.rerun()
     with buttons[3]:
-        if not already_sent and st.button("Confirm sent", key=f"sent_{lead['id']}"):
+        can_send = bool(lead.get("email") and subject.strip() and body.strip())
+        if not already_sent and st.button(
+            "Send & move to Sent",
+            key=f"sent_{lead['id']}",
+            disabled=not can_send,
+        ):
             db.update_lead(lead["id"], subject=subject, body=body, status="sent",
                            sent_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
-            st.success("Marked as sent.")
+            st.session_state["open_mailto_after_mark_id"] = lead["id"]
             st.rerun()
 
     if already_sent:
         sent_at = lead.get("sent_at")
-        st.info(f"Already marked sent{f' on {sent_at}' if sent_at else ''}. Sending is hidden to help prevent duplicates.")
-    elif lead.get("email") and subject:
-        mailto = f"mailto:{quote(lead['email'], safe='')}?subject={quote(subject)}&body={quote(body)}"
-        st.caption(
-            "Open the draft in your phone's default email app, send it there, then return here "
-            "and select Confirm sent. Set Gmail as your phone's default mail app to use Gmail. "
-            "Opening the draft does not send it or update its status."
+        st.info(
+            f"Marked sent{f' on {sent_at}' if sent_at else ''}. "
+            "This status records your click in the website; it cannot confirm Gmail actually sent the message."
         )
-        st.link_button("Open draft in Gmail", mailto)
+        if st.session_state.pop("open_mailto_after_mark_id", None) == lead["id"]:
+            mailto = f"mailto:{quote(lead['email'], safe='')}?subject={quote(subject)}&body={quote(body)}"
+            st.link_button("Open Gmail draft to finish sending", mailto)
+    elif lead.get("email") and subject:
+        st.caption(
+            "The Send button will move this lead to Sent immediately. The app cannot verify "
+            "whether Gmail completed delivery. Set Gmail as your phone's default mail app."
+        )
 
     facts = full.get("facts") or {}
     if facts:
