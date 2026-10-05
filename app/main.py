@@ -105,8 +105,7 @@ async def test_key():
         out = await composer.test_api_key(s)
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": str(e)[:300]}, status_code=200)
-    return {"ok": True, "engine": out.get("engine"), "sample_subject": (out.get("subjects") or [""])[0],
-            "sample_body": out.get("body", "")[:400]}
+    return {"ok": True, "engine": out.get("engine"), "sample": out.get("sample", "")}
 
 
 # ------------------------------------------------------------------ ingest

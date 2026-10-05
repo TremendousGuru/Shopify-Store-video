@@ -120,6 +120,10 @@ async def _process_one(lead_id: int, fetcher: crawler.Fetcher, settings: dict, r
         bus_publish(run_id, {"type": "update", "id": lead_id, "status": "failed", "error": "empty body"})
         return {"id": lead_id, "status": "failed"}
 
+    notes = out.get("hook") or ""
+    if out.get("fallback_reason"):
+        notes = f"{notes} [AI fallback: {out['fallback_reason']}]".strip()
+
     db.update_lead(
         lead_id,
         status="ready",
@@ -128,7 +132,7 @@ async def _process_one(lead_id: int, fetcher: crawler.Fetcher, settings: dict, r
         subject=subjects[0],
         body=body,
         engine=out.get("engine", ""),
-        notes=(out.get("hook") or "")[:300],
+        notes=notes[:300],
     )
     ev = {
         "type": "update", "id": lead_id, "status": "ready",

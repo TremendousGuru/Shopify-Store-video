@@ -139,12 +139,14 @@ async def compose_ai(facts: dict, settings: dict, store_hint: str = "the store")
     payload = {
         "model": model,
         "temperature": 0.85,
-        "max_tokens": 800,
+        "max_tokens": 2048,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": build_user_prompt(build_facts_block(facts), settings, store_hint, subject_hint)},
         ],
     }
+    if "api.groq.com" in base.lower() and model.lower().startswith("openai/gpt-oss"):
+        payload["reasoning_effort"] = "low"
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     async with httpx.AsyncClient(timeout=90) as client:
         r = await client.post(f"{base}/chat/completions", json=payload, headers=headers)
@@ -191,11 +193,13 @@ async def test_api_key(settings: dict) -> dict:
 
     payload = {
         "model": model,
-        "max_tokens": 64,
+        "max_tokens": 1024,
         "messages": [
             {"role": "user", "content": "Reply with exactly: API key verified."},
         ],
     }
+    if "api.groq.com" in base.lower() and model.lower().startswith("openai/gpt-oss"):
+        payload["reasoning_effort"] = "low"
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(f"{base}/chat/completions", json=payload, headers=headers)

@@ -343,7 +343,7 @@ function init() {
     }
     const r = await api("/api/test-key", { method: "POST" });
     if (r.ok) {
-      el.innerHTML = `<span style="color:var(--ok)">Works.</span> Sample subject: “${esc(r.sample_subject)}”`;
+      el.innerHTML = `<span style="color:var(--ok)">Works.</span> Sample response: “${esc(r.sample)}”`;
       loadSettings();
     } else {
       el.innerHTML = `<span style="color:var(--err)">Failed:</span> ${esc(r.error)}`;

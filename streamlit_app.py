@@ -432,6 +432,8 @@ def show_lead(lead: dict, settings: dict) -> None:
         st.error(lead["error"])
     if lead.get("flags"):
         st.caption(" · ".join(lead["flags"]))
+    if full.get("notes"):
+        st.caption(f"Composition note: {full['notes']}")
 
     subjects = full.get("subjects") or []
     selected_subject = st.selectbox(
