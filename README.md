@@ -112,14 +112,13 @@ Progress streams live. You can close the tab; the work continues in the backgrou
 when you come back.
 
 ### 3. Review and send
-Click **Open** on any row. You get three tabs:
+Review any row to edit its draft and inspect the collected store facts and sources.
 
-- **Message** — pick one of three subjects, edit the body freely, **Rewrite this one**
-- **What we found** — the exact facts the message was built from (products, founder, signals, socials)
-- **Sources** — every URL that was read and its HTTP status, so you can verify the personalization
-
-Then **Open in my email app** (or **Open in Gmail web**) — subject and body land pre-filled and you
-press send. The row flips to `sent` so you don't double-email anyone.
+On a phone, **Open draft in Gmail** uses a `mailto:` link to open the default mail app with the
+recipient, subject and body filled in. Set Gmail as the phone's default mail app if you want it
+to open in Gmail. The app cannot detect whether you actually pressed Send: return to the website
+and select **Confirm sent** only after sending. A lead marked `sent` no longer shows the send link,
+which helps reduce accidental duplicates.
 
 ---
 

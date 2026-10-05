@@ -348,6 +348,7 @@ def show_lead(lead: dict, settings: dict) -> None:
     subject = st.text_input("Edit subject", value=selected_subject or full.get("subject", ""), key=f"edit_subject_{lead['id']}")
     body = st.text_area("Message draft", value=full.get("body", ""), height=240, key=f"body_{lead['id']}")
 
+    already_sent = lead.get("status") == "sent"
     buttons = st.columns(4)
     with buttons[0]:
         if st.button("Save draft", key=f"save_{lead['id']}"):
@@ -369,21 +370,23 @@ def show_lead(lead: dict, settings: dict) -> None:
             st.success(f"Crawl finished: {result['ready']} ready, {result['failed']} failed.")
             st.rerun()
     with buttons[3]:
-        if st.button("Mark sent", key=f"sent_{lead['id']}"):
+        if not already_sent and st.button("Confirm sent", key=f"sent_{lead['id']}"):
             db.update_lead(lead["id"], subject=subject, body=body, status="sent",
                            sent_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
             st.success("Marked as sent.")
             st.rerun()
 
-    if lead.get("email") and subject:
+    if already_sent:
+        sent_at = lead.get("sent_at")
+        st.info(f"Already marked sent{f' on {sent_at}' if sent_at else ''}. Sending is hidden to help prevent duplicates.")
+    elif lead.get("email") and subject:
         mailto = f"mailto:{quote(lead['email'], safe='')}?subject={quote(subject)}&body={quote(body)}"
-        gmail = (
-            "https://mail.google.com/mail/?view=cm&fs=1&tf=1"
-            f"&to={quote(lead['email'])}&su={quote(subject)}&body={quote(body)}"
+        st.caption(
+            "Open the draft in your phone's default email app, send it there, then return here "
+            "and select Confirm sent. Set Gmail as your phone's default mail app to use Gmail. "
+            "Opening the draft does not send it or update its status."
         )
-        send_cols = st.columns(2)
-        send_cols[0].link_button("Open in email app", mailto)
-        send_cols[1].link_button("Open in Gmail web", gmail)
+        st.link_button("Open draft in Gmail", mailto)
 
     facts = full.get("facts") or {}
     if facts:
