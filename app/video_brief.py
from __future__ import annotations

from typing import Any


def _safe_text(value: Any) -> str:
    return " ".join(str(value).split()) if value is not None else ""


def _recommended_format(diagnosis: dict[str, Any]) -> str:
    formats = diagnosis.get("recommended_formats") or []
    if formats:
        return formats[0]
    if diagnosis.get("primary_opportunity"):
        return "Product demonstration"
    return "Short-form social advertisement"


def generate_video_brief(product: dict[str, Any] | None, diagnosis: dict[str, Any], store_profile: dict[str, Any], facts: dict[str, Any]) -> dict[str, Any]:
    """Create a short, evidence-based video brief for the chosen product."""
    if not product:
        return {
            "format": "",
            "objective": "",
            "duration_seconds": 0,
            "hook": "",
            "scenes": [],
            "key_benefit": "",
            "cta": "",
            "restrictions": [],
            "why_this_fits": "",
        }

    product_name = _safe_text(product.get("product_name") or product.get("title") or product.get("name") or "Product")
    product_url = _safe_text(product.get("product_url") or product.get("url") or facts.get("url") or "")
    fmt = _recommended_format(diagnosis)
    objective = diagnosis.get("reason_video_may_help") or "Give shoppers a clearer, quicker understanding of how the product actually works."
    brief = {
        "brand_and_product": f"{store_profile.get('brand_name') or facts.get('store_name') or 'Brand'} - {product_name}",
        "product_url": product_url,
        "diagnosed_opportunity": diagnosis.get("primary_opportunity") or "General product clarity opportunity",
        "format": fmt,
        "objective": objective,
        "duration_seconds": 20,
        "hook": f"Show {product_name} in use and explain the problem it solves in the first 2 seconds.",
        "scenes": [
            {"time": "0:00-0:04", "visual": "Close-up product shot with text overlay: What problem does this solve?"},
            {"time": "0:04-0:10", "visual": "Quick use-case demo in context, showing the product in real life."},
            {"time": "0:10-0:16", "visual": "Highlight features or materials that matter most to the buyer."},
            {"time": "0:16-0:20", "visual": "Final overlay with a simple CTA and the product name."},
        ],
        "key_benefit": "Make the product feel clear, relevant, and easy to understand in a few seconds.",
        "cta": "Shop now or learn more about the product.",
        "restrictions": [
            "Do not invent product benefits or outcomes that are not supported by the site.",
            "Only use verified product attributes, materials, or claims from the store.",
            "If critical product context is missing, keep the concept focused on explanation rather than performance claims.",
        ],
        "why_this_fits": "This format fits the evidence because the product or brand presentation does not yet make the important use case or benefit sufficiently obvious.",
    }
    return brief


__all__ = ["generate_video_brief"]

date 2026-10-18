@@ -1,0 +1,75 @@
+"""Video opportunity scoring logic.
+
+This module keeps the selection logic separate from the crawler so the system can
+score products based on the diagnosed store opportunity without mixing concerns.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+from .diagnosis import select_best_product as diagnose_select_best_product
+
+
+def score_product(product: dict[str, Any], diagnosis: dict[str, Any], facts: dict[str, Any]) -> dict[str, Any]:
+    """Score a single product against the discovered opportunity using the requested 10-point heuristic."""
+    if not product:
+        return {"product_name": "", "product_url": "", "score": 0, "score_breakdown": {}}
+
+    title = str(product.get("title") or product.get("name") or "Untitled product").strip()
+    product_url = str(product.get("product_url") or product.get("url") or facts.get("url") or "").strip()
+    image_present = bool(product.get("image"))
+
+    evidence_gap = 0
+    if diagnosis.get("video_opportunity_found"):
+        evidence_gap += 3
+    if title:
+        evidence_gap += 1
+    if product_url:
+        evidence_gap += 1
+    if not image_present:
+        evidence_gap += 1
+
+    suitability = 3 if diagnosis.get("video_opportunity_found") else 0
+    visual_potential = 2 if image_present else 1
+    brand_fit = 1 if (facts.get("store_profile") or {}).get("brand_positioning") else 0
+    improvement = 1 if not facts.get("video_embeds") else 0
+
+    total = min(10, evidence_gap + suitability + visual_potential + brand_fit + improvement)
+    return {
+        "product_name": title,
+        "product_url": product_url,
+        "score": total,
+        "score_breakdown": {
+            "evidence_backed_product_or_presentation_gap": min(3, evidence_gap),
+            "suitability_of_video_for_gap": min(3, suitability),
+            "visual_demonstration_potential": min(2, visual_potential),
+            "fit_with_brand_positioning": brand_fit,
+            "opportunity_to_improve_on_existing_video_content": improvement,
+        },
+        "selection_reason": "Reasonably strong fit for a video opportunity if the evidence is valid.",
+    }
+
+
+def select_best_product(products: list[dict[str, Any]], diagnosis: dict[str, Any], facts: dict[str, Any]) -> dict[str, Any] | None:
+    """Wrapper that keeps the selection logic in one place and exposes a stable API."""
+    if not products:
+        return None
+    if not diagnosis.get("video_opportunity_found"):
+        return None
+
+    scored = []
+    for product in products:
+        item = score_product(product, diagnosis, facts)
+        if item["product_name"]:
+            scored.append(item)
+    if not scored:
+        return None
+    scored.sort(key=lambda item: item["score"], reverse=True)
+    best = scored[0]
+    best["alternative_candidates"] = scored[1:4]
+    if best["score"] < 5:
+        best["selection_reason"] = "The evidence is not strong enough to justify a primary product choice."
+    return best
+
+
+__all__ = ["score_product", "select_best_product"]

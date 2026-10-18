@@ -111,8 +111,10 @@ SOCIAL_SKIP = {"sharer", "share", "intent", "home", "p", "explore", "reel", "wat
 
 # ----------------------------------------------------------------- helpers
 
+
 def clean_domain(raw: str) -> str:
     from .ingest import clean_domain as _cd
+
     return _cd(raw)
 
 
@@ -388,7 +390,7 @@ class Fetcher:
 
 # ----------------------------------------------------------------- extraction
 
-def extract_products(payload: list[dict], max_products: int = 25) -> list[dict]:
+def extract_products(payload: list[dict], origin: str = "", max_products: int = 25) -> list[dict]:
     out = []
     for p in payload or []:
         title = clean_text(p.get("title"))
@@ -400,6 +402,15 @@ def extract_products(payload: list[dict], max_products: int = 25) -> list[dict]:
             if price:
                 break
         tags = [clean_text(t).lower() for t in (p.get("tags") or []) if clean_text(t)]
+        handle = p.get("handle") or p.get("url") or ""
+        product_url = ""
+        if handle:
+            if handle.startswith("/"):
+                product_url = urljoin(origin, handle)
+            elif handle.startswith("http"):
+                product_url = handle
+            else:
+                product_url = f"{origin.rstrip('/')}/products/{handle}"
         out.append({
             "title": title,
             "price": price,
@@ -407,9 +418,10 @@ def extract_products(payload: list[dict], max_products: int = 25) -> list[dict]:
             "vendor": clean_text(p.get("vendor")),
             "tags": tags[:6],
             "image": bool((p.get("images") or [])),
+            "product_url": product_url,
         })
     # Prefer stuff that actually looks like a hero product: priced, imaged, informative title.
-    out.sort(key=lambda x: (x["image"], bool(x["price"]), len(x["title"])))
+    out.sort(key=lambda x: (x.get("image"), bool(x.get("price")), len(x.get("title", ""))), reverse=True)
     return out[:max_products]
 
 
@@ -525,6 +537,91 @@ def jsonld_org(soup: BeautifulSoup) -> dict:
     return {k: v for k, v in out.items() if v}
 
 
+# ----------------------------------------------------------------- product page helpers
+
+
+def detect_embedded_videos(html: str) -> list[str]:
+    out: list[str] = []
+    if not html:
+        return out
+    # youtube
+    for m in re.finditer(r"youtube\.com/(?:watch\?v=|embed/)([A-Za-z0-9_\-]{3,})|youtu\.be/([A-Za-z0-9_\-]{3,})", html, re.I):
+        vid = m.group(1) or m.group(2)
+        if vid:
+            out.append(f"https://www.youtube.com/watch?v={vid}")
+    # vimeo
+    for m in re.finditer(r"player\.vimeo\.com/video/(\d{6,})", html, re.I):
+        out.append(f"https://vimeo.com/{m.group(1)}")
+    # tiktok
+    for m in re.finditer(r"tiktok\.com/(?:@[^/]+/video/)?(\d{6,})", html, re.I):
+        out.append(m.group(0))
+    # plain video src
+    for m in re.finditer(r"<video[^>]+src=[\'"]([^\'\"]+)[\'\"]", html, re.I):
+        out.append(m.group(1))
+    # iframes to common hosts
+    for m in re.finditer(r"<iframe[^>]+src=[\'\"]([^\'\"]+)[\'\"]", html, re.I):
+        src = m.group(1)
+        if any(host in src for host in ("youtube.com", "youtu.be", "vimeo.com", "tiktok.com", "cdn.embedly.com")):
+            out.append(src)
+    return list(dict.fromkeys(out))
+
+
+async def fetch_product_page(fetcher: Fetcher, url: str) -> dict:
+    if not url:
+        return {}
+    status, html, final = await fetcher.get(url)
+    if status != 200 or not html:
+        return {"url": final, "status": status}
+    s = soupify(html)
+    desc = paragraphs(s, min_len=30, limit=8, prose_only=True)
+    images = []
+    for img in s.find_all("img")[:12]:
+        src = img.get("src") or img.get("data-src") or img.get("data-lazy-src") or ""
+        if src:
+            images.append(src)
+    videos = detect_embedded_videos(html)
+    # naive FAQ detection: look for common FAQ headings and collect following paras
+    faqs = []
+    for header in s.find_all(["h2", "h3", "h4"]):
+        ht = clean_text(header.get_text(" ")).lower()
+        if any(k in ht for k in ("faq", "questions", "how to", "usage", "care", "instructions")):
+            # collect next sibling paragraphs
+            p = header.find_next_sibling()
+            if p:
+                txt = clean_text(p.get_text(" "))
+                if txt and len(txt) > 40:
+                    faqs.append(txt[:400])
+    # search JSON-LD for Product nodes with description/reviews
+    reviews = []
+    for el in s.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(el.string or "{}")
+        except Exception:
+            continue
+        nodes = data if isinstance(data, list) else [data]
+        for node in nodes:
+            if isinstance(node, dict) and node.get("@type") == "Product":
+                if node.get("description"):
+                    if not desc:
+                        desc = [clean_text(node.get("description"))]
+                if node.get("review"):
+                    try:
+                        rs = node.get("review")
+                        if isinstance(rs, list):
+                            reviews.extend([clean_text(r.get("reviewBody")) for r in rs if r.get("reviewBody")])
+                    except Exception:
+                        pass
+    return {
+        "url": final,
+        "status": 200,
+        "description": "\n\n".join(desc) if desc else "",
+        "images": images,
+        "videos": videos,
+        "faqs": faqs,
+        "reviews": reviews,
+    }
+
+
 # ----------------------------------------------------------------- main entry
 
 async def crawl_store(fetcher: Fetcher, lead: dict, settings: dict) -> dict:
@@ -540,6 +637,7 @@ async def crawl_store(fetcher: Fetcher, lead: dict, settings: dict) -> dict:
 
     max_pages = int(settings.get("max_pages", 5) or 5)
     max_products = int(settings.get("max_products", 25) or 25)
+    max_product_pages = int(settings.get("max_product_pages_to_fetch", 0) or 0)
 
     origin = ""
     home_html = ""
@@ -591,13 +689,13 @@ async def crawl_store(fetcher: Fetcher, lead: dict, settings: dict) -> dict:
         if meta.get("ships_to_countries"):
             facts["ships_to"] = [clean_text(c) for c in meta["ships_to_countries"]][:12]
         if meta.get("country"):
-            facts["country"] = clean_text(meta["country"])
+            facts["country"] = clean_text(meta.get("country"))
 
     products: list[dict] = []
     if shopify:
         payload, pstatus = await fetcher.get_json(f"{origin}/products.json?limit=100")
         if isinstance(payload, dict):
-            products = extract_products(payload.get("products") or [], max_products)
+            products = extract_products(payload.get("products") or [], origin, max_products)
             result["pages"].append({
                 "label": "products.json", "url": f"{origin}/products.json",
                 "status": 200, "note": f"{len(products)} products",
@@ -625,7 +723,7 @@ async def crawl_store(fetcher: Fetcher, lead: dict, settings: dict) -> dict:
                 t = clean_text(el.get_text(" "))
                 if 6 <= len(t) <= 80 and t.lower() not in seen_titles:
                     seen_titles.add(t.lower())
-                    products.append({"title": t, "price": "", "type": "", "vendor": "", "tags": [], "image": False})
+                    products.append({"title": t, "price": "", "type": "", "vendor": "", "tags": [], "image": False, "product_url": ""})
             if len(products) >= 8:
                 break
         products = products[:max_products]
@@ -773,6 +871,40 @@ async def crawl_store(fetcher: Fetcher, lead: dict, settings: dict) -> dict:
 
     products = rank_products(products)
     facts["products"] = products
+
+    # --- Optionally fetch product pages for richer signals
+    aggregated_videos: list[str] = []
+    if products and max_product_pages > 0:
+        inspected = 0
+        for p in products:
+            if inspected >= max_product_pages:
+                break
+            url = p.get("product_url") or ""
+            if not url:
+                continue
+            inspected += 1
+            try:
+                detail = await fetch_product_page(fetcher, url)
+            except Exception:
+                continue
+            # Merge interesting fields back into the product dict
+            if detail.get("description"):
+                p["description"] = detail.get("description")
+            if detail.get("images"):
+                p["images"] = detail.get("images")
+            if detail.get("videos"):
+                p["videos"] = detail.get("videos")
+                aggregated_videos.extend(detail.get("videos") or [])
+            if detail.get("faqs"):
+                p["faqs"] = detail.get("faqs")
+            if detail.get("reviews"):
+                p["reviews"] = detail.get("reviews")
+            # Presentation signals
+            p["demonstrated_in_use"] = bool(detail.get("videos"))
+            p["benefits_explained"] = bool(detail.get("description")) and ("benefit" in detail.get("description").lower() or "features" in detail.get("description").lower())
+            p["shown_in_context"] = bool(detail.get("images"))
+    facts["video_embeds"] = list(dict.fromkeys(aggregated_videos))
+
     if products:
         prices = []
         for p in products:
@@ -800,7 +932,9 @@ async def crawl_store(fetcher: Fetcher, lead: dict, settings: dict) -> dict:
         for p in products:
             for t in p.get("tags") or []:
                 tags[t] = tags.get(t, 0) + 1
-        facts["top_tags"] = [t for t, _ in sorted(tags.items(), key=lambda kv: -kv[1])[:10]]
+        facts["top_tags"] = [t for t, _ in sorted(tags.items(), key=lambda kv: -kv[1])[:10]
+
+                             ]
 
     # --- Email discovery when the sheet had none
     if not lead.get("email") and settings.get("find_missing_emails", True):

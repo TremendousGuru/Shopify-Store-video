@@ -1,2 +1,2 @@
 """Shopify outreach studio - local app package."""
-__all__ = ["main", "db", "ingest", "crawler", "compose", "pipeline"]
+__all__ = ["main", "db", "ingest", "crawler", "compose", "pipeline", "store_profile", "diagnosis", "scoring", "video_brief"]

@@ -1,0 +1,105 @@
+"""Store intelligence profile builder.
+
+This keeps raw extracted crawler facts separate from AI-generated interpretation.
+It creates a normalized, evidence-aware profile that can drive diagnosis and video
+selection without weakening the original data inventory.
+"""
+from __future__ import annotations
+
+import re
+from typing import Any
+
+
+def _plain(value: Any) -> str:
+    return " ".join(str(value).split()) if value is not None else ""
+
+
+def _titleish(value: Any) -> str:
+    text = _plain(value)
+    text = re.sub(r"\s+[|·—–-]\s+.*$", "", text)
+    return text
+
+
+def build_store_profile(facts: dict[str, Any]) -> dict[str, Any]:
+    """Normalize raw crawler facts into a structured store profile."""
+    products = facts.get("products") or []
+    brand_name = _titleish(facts.get("store_name") or facts.get("domain") or "")
+    store_url = facts.get("url") or facts.get("domain") or ""
+    if store_url and not store_url.startswith("http"):
+        store_url = f"https://{store_url}"
+
+    niche = ""
+    product_types = facts.get("product_types") or []
+    top_tags = facts.get("top_tags") or []
+    if product_types:
+        niche = product_types[0]
+    elif top_tags:
+        niche = top_tags[0]
+    elif products:
+        niche = products[0].get("type") or "general retail"
+
+    signals = facts.get("signals") or []
+    strong_signals = facts.get("strong_signals") or []
+    positioning_bits = strong_signals or signals[:4]
+    positioning = ", ".join(positioning_bits) if positioning_bits else "general e-commerce brand"
+
+    about_text = facts.get("about_snippet") or facts.get("home_snippet") or ""
+    target_audience = "likely general shoppers"
+    if about_text:
+        if any(word in about_text.lower() for word in ["women", "mothers", "gift", "family", "wellness", "fitness"]):
+            target_audience = "likely lifestyle and wellness shoppers"
+        elif any(word in about_text.lower() for word in ["pet", "dog", "cat", "baby", "kids", "home"]):
+            target_audience = "likely practical household or family shoppers"
+
+    existing_video_formats: list[str] = []
+    if facts.get("video_embeds"):
+        existing_video_formats = list(dict.fromkeys(facts.get("video_embeds", [])))
+
+    strengths: list[str] = []
+    if products:
+        strengths.append("product catalog available")
+    if about_text:
+        strengths.append("brand story visible")
+    if facts.get("socials"):
+        strengths.append("social links visible")
+    if facts.get("collections"):
+        strengths.append("category structure visible")
+    if facts.get("shipping_facts"):
+        strengths.append("shipping and policy information available")
+
+    gaps: list[str] = []
+    if not about_text:
+        gaps.append("about page story not available")
+    if not products:
+        gaps.append("product catalog not available")
+    if not existing_video_formats:
+        gaps.append("video demonstration content not visible")
+
+    profile = {
+        "brand_name": brand_name,
+        "store_url": store_url,
+        "niche": _plain(niche) or "general retail",
+        "target_audience": target_audience,
+        "brand_positioning": positioning,
+        "brand_story": about_text[:600],
+        "product_categories": facts.get("product_types") or [],
+        "main_products": [
+            {
+                "title": _titleish(p.get("title")),
+                "price": p.get("price"),
+                "type": _plain(p.get("type")),
+                "image": bool(p.get("image")),
+                "product_url": p.get("product_url") or p.get("url") or "",
+            }
+            for p in products[:8]
+        ],
+        "existing_video_formats": existing_video_formats,
+        "existing_presentation_strengths": strengths,
+        "presentation_gaps": gaps,
+        "uncertainties": [],
+        "raw_extracted": facts,
+    }
+    if not profile["brand_name"] and facts.get("domain"):
+        profile["brand_name"] = facts["domain"]
+
+    return profile

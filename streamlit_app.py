@@ -445,6 +445,35 @@ def main() -> None:
         )
 
 
+def _format_duration(seconds: int | None) -> str:
+    if not seconds:
+        return ""
+    m, s = divmod(int(seconds), 60)
+    return f"{m}m {s}s" if m else f"{s}s"
+
+
+def _render_scenes(scenes: list) -> None:
+    if not scenes:
+        return
+    for i, scene in enumerate(scenes, start=1):
+        if isinstance(scene, str):
+            st.markdown(f"**Scene {i}:** {scene}")
+        elif isinstance(scene, dict):
+            time = scene.get("time") or scene.get("start") or ""
+            desc = scene.get("description") or scene.get("visual") or ""
+            voice = scene.get("voice_over") or scene.get("dialogue") or ""
+            parts = []
+            if time:
+                parts.append(f"_({time})_")
+            if desc:
+                parts.append(desc)
+            if voice:
+                parts.append(f"**VO:** {voice}")
+            st.markdown(f"**Scene {i}:** {' — '.join(parts)}")
+        else:
+            st.markdown(f"**Scene {i}:** {scene}")
+
+
 def show_lead(lead: dict, settings: dict) -> None:
     full = db.get_lead(lead["id"], full=True) or {}
     st.markdown(f"### {lead.get('store_name') or lead.get('domain') or 'Store'}")
@@ -523,6 +552,119 @@ def show_lead(lead: dict, settings: dict) -> None:
         )
 
     facts = full.get("facts") or {}
+
+    # Video diagnosis & brief: render if any of the structured keys exist
+    diagnosis = facts.get("diagnosis") or {}
+    product_selection = facts.get("product_selection") or {}
+    video_brief = facts.get("video_brief") or {}
+    quality_control = facts.get("quality_control") or {}
+
+    if diagnosis or product_selection or video_brief or quality_control:
+        with st.expander("Video diagnosis & brief", expanded=False):
+            if diagnosis:
+                st.subheader("Store diagnosis")
+                primary = diagnosis.get("primary_opportunity")
+                if primary:
+                    st.markdown(f"**Primary opportunity:** {primary}")
+                conf = diagnosis.get("confidence")
+                if conf is not None:
+                    st.markdown(f"**Confidence:** {conf}")
+                observations = diagnosis.get("observations") or []
+                if observations:
+                    st.markdown("**Observations:**")
+                    for obs in observations:
+                        finding = obs.get("finding") or obs.get("title")
+                        category = obs.get("problem_category")
+                        evidence = obs.get("evidence_type")
+                        why = obs.get("why_video_may_help") or obs.get("why")
+                        source = obs.get("source_url") or obs.get("url")
+                        st.markdown("- ---")
+                        if finding:
+                            st.markdown(f"**Finding:** {finding}")
+                        if category:
+                            st.markdown(f"**Category:** {category}")
+                        if evidence:
+                            st.markdown(f"**Evidence:** {evidence}")
+                        if why:
+                            st.markdown(f"**Why video helps:** {why}")
+                        if source:
+                            st.markdown(f"**Source:** [{source}]({source})")
+
+            if product_selection:
+                st.subheader("Selected product")
+                pname = product_selection.get("product_name")
+                purl = product_selection.get("product_url")
+                if pname:
+                    if purl:
+                        st.markdown(f"**{pname}** · [{purl}]({purl})")
+                    else:
+                        st.markdown(f"**{pname}**")
+                score = product_selection.get("score")
+                if score is not None:
+                    st.markdown(f"**Selection score:** {score}/10")
+                breakdown = product_selection.get("score_breakdown") or {}
+                if breakdown:
+                    st.markdown("**Score breakdown:**")
+                    st.json(breakdown)
+                reason = product_selection.get("selection_reason")
+                if reason:
+                    st.markdown(f"**Reason:** {reason}")
+                alts = product_selection.get("alternative_candidates") or []
+                if alts:
+                    st.markdown("**Alternatives considered:**")
+                    for a in alts:
+                        if isinstance(a, dict):
+                            an = a.get("name") or a.get("product_name")
+                            au = a.get("url") or a.get("product_url")
+                            if an and au:
+                                st.markdown(f"- [{an}]({au})")
+                            elif an:
+                                st.markdown(f"- {an}")
+                            else:
+                                st.markdown(f"- {a}")
+                        else:
+                            st.markdown(f"- {a}")
+
+            if video_brief:
+                st.subheader("Video brief")
+                fmt = video_brief.get("format") or video_brief.get("recommended_format")
+                objective = video_brief.get("objective")
+                duration = _format_duration(video_brief.get("duration_seconds") or video_brief.get("duration"))
+                cta = video_brief.get("cta")
+                restrictions = video_brief.get("restrictions") or []
+                if fmt:
+                    st.markdown(f"**Format:** {fmt}")
+                if objective:
+                    st.markdown(f"**Objective:** {objective}")
+                if duration:
+                    st.markdown(f"**Duration:** {duration}")
+                if cta:
+                    st.markdown(f"**CTA:** {cta}")
+                if restrictions:
+                    st.markdown("**Restrictions:**")
+                    for r in restrictions:
+                        st.markdown(f"- {r}")
+                scenes = video_brief.get("scenes") or video_brief.get("timeline") or []
+                if scenes:
+                    st.markdown("**Scenes / Timeline:**")
+                    _render_scenes(scenes)
+                extras = video_brief.get("voice_over") or video_brief.get("on_screen_text")
+                if extras:
+                    st.markdown("**Voice / on-screen text:**")
+                    st.write(extras)
+
+            if quality_control:
+                st.subheader("Quality control")
+                st.markdown(f"**Evidence sufficient:** {quality_control.get('evidence_sufficient')}")
+                st.markdown(f"**Video opportunity found:** {quality_control.get('video_opportunity_found')}")
+                if quality_control.get("manual_review_required"):
+                    st.markdown("**Manual review required**")
+                warnings = quality_control.get("warnings") or quality_control.get("review_reasons") or []
+                if warnings:
+                    st.markdown("**Warnings / review notes:**")
+                    for w in warnings:
+                        st.markdown(f"- {w}")
+
     if facts:
         with st.expander("What we found"):
             st.json(facts)
